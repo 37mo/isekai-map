@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>異世界マップ - ISEKAI MAP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      :root {
+        --rpg-gold: #ffd700;
+        --rpg-blue: #1a2238;
+        --rpg-border: #bfff00;
+        --rpg-player: #00e5ff;
+      }
+
+      body {
+        font-family: "DotGothic16", sans-serif;
+        background-color: #000;
+        color: #fff;
+        overflow: hidden;
+        height: 100vh;
+        margin: 0;
+      }
+
+      #map {
+        width: 100vw;
+        height: 100vh;
+        background: #1a2238;
+      }
+
+      .leaflet-tile-container img {
+        image-rendering: pixelated;
+        filter: saturate(1.4) contrast(1.1) brightness(0.9);
+      }
+
+      #fog-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 400;
+        pointer-events: none;
+      }
+
+      /* RPG UI Style */
+      .rpg-panel {
+        background-color: rgba(26, 34, 56, 0.95);
+        border: 4px solid #fff;
+        outline: 4px solid var(--rpg-blue);
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+      }
+
+      /* Minimap Container (Top Right) */
+      .minimap-container {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 150px;
+        height: 150px;
+        z-index: 1000;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 4px solid #fff;
+        outline: 4px solid var(--rpg-blue);
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+      }
+      #minimap {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* UI Containers */
+      .left-ui-container {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 220px;
+      }
+
+      .detailed-stats {
+        width: 100%;
+        transition: all 0.3s ease;
+        position: relative;
+      }
+
+      .detailed-stats.minimized #stats-content {
+        display: none;
+      }
+
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 2px 0;
+      }
+
+      .toggle-btn {
+        position: absolute;
+        top: 4px;
+        right: 8px;
+        cursor: pointer;
+        color: var(--rpg-gold);
+        font-size: 1.2rem;
+      }
+
+      /* Commands Menu */
+      .cmd-menu {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+        z-index: 1000;
+        width: max-content;
+      }
+
+      .cmd-btn {
+        padding: 10px 15px;
+        background: var(--rpg-blue);
+        border: 2px solid #fff;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: "DotGothic16", sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 0.9rem;
+      }
+
+      .cmd-btn:hover {
+        background: var(--rpg-gold);
+        color: #000;
+      }
+
+      .locate-btn {
+        position: absolute;
+        right: 20px;
+        bottom: 180px;
+        width: 50px;
+        height: 50px;
+        border-radius: 4px;
+        z-index: 1000;
+        background: var(--rpg-blue);
+        border: 2px solid #fff;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      /* RPG Player Marker */
+      .player-marker-container {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px !important;
+        height: 40px !important;
+        margin-left: -20px;
+        margin-top: -20px;
+      }
+
+      .player-base-glow {
+        position: absolute;
+        bottom: 0;
+        width: 30px;
+        height: 12px;
+        background: radial-gradient(
+          ellipse at center,
+          rgba(0, 229, 255, 0.8) 0%,
+          rgba(0, 229, 255, 0) 70%
+        );
+        border-radius: 50%;
+        animation: glow-pulse 2s infinite ease-in-out;
+        z-index: -1;
+      }
+
+      .player-sprite {
+        width: 36px;
+        height: 36px;
+        image-rendering: pixelated;
+        animation: bobbing 1.5s infinite ease-in-out;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+      }
+
+      @keyframes bobbing {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-5px);
+        }
+      }
+
+      @keyframes glow-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.6;
+        }
+        50% {
+          transform: scale(1.3);
+          opacity: 1;
+        }
+      }
+
+      /* Markers */
+      .custom-marker {
+        background: var(--rpg-gold);
+        border: 2px solid #fff;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        width: 24px !important;
+        height: 24px !important;
+        margin-left: -12px;
+        margin-top: -24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .custom-marker i {
+        transform: rotate(45deg);
+        color: #000;
+        font-size: 10px;
+      }
+
+      .modal {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 90%;
+        max-width: 500px;
+        z-index: 2000;
+      }
+
+      .input-field {
+        background: #000;
+        border: 2px solid var(--rpg-border);
+        color: var(--rpg-border);
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 10px;
+        font-family: inherit;
+      }
+
+      #avatar-preview {
+        width: 60px;
+        height: 60px;
+        image-rendering: pixelated;
+        border: 2px solid var(--rpg-gold);
+        object-fit: cover;
+      }
+
+      .spot-list-item {
+        border-bottom: 2px solid var(--rpg-blue);
+        padding: 10px 0;
+      }
+
+      #avatar-upload {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <canvas id="fog-overlay"></canvas>
+
+    <div class="minimap-container">
+      <div id="minimap"></div>
+    </div>
+
+    <div class="left-ui-container">
+      <div class="status-bar rpg-panel p-3 flex items-center gap-4">
+        <img
+          id="avatar-preview"
+          src="https://api.dicebear.com/7.x/pixel-art/svg?seed=knight"
+          alt="アバター"
+        />
+        <div>
+          <div class="text-lg text-yellow-400">Lv.15 勇者</div>
+          <div class="flex gap-2 text-xs">
+            <span>Gold: 1,250 G$</span>
+            <span class="text-green-400">Exp: 84%</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="stat-panel" class="detailed-stats rpg-panel p-3 text-sm">
+        <div
+          class="text-center text-yellow-400 border-b-2 border-white mb-2 pb-1 pr-4"
+        >
+          能力値
+        </div>
+        <div id="toggle-icon" class="toggle-btn" onclick="toggleStats()">-</div>
+        <div id="stats-content">
+          <div class="stat-row"><span>ちから</span><span>142</span></div>
+          <div class="stat-row"><span>みのまもり</span><span>98</span></div>
+          <div class="stat-row">
+            <span>かしこさ</span><span id="stat-int">210</span>
+          </div>
+          <div class="stat-row"><span>きようさ</span><span>85</span></div>
+          <div class="stat-row">
+            <span>拠点発見数</span><span id="stat-spots">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button class="locate-btn" onclick="locateUser()">
+      <i class="fa-solid fa-person-rays"></i>
+    </button>
+
+    <div class="cmd-menu">
+      <button class="cmd-btn" onclick="openModal('list-modal')">
+        <i class="fa-solid fa-magnifying-glass"></i>しらべる
+      </button>
+      <button class="cmd-btn" onclick="openModal('post-modal')">
+        <i class="fa-solid fa-pen-nib"></i>きろく
+      </button>
+      <button class="cmd-btn" onclick="toggleFog()">
+        <i class="fa-solid fa-cloud"></i>霧
+      </button>
+      <button class="cmd-btn" onclick="openModal('profile-modal')">
+        <i class="fa-solid fa-suitcase"></i>どうぐ
+      </button>
+    </div>
+
+    <!-- MODALS -->
+    <div id="list-modal" class="modal rpg-panel p-6">
+      <h2 class="text-xl mb-4 text-yellow-400">付近のギルド報告書</h2>
+      <div id="spot-list-container" class="max-h-80 overflow-y-auto mb-4 pr-2">
+        <p class="text-gray-400 text-sm">報告はありません。</p>
+      </div>
+      <button class="cmd-btn w-full" onclick="closeModal()">閉じる</button>
+    </div>
+
+    <div id="post-modal" class="modal rpg-panel p-6">
+      <h2 class="text-xl mb-4 text-yellow-400">ギルドへの報告（きろく）</h2>
+      <div class="max-h-[60vh] overflow-y-auto pr-2">
+        <label class="text-sm block mb-1">場所の名前</label>
+        <input
+          type="text"
+          id="spot-name"
+          class="input-field"
+          placeholder="例：賢者の隠れ家カフェ"
+        />
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-sm block mb-1">Wi-Fi</label>
+            <select id="wifi-status" class="input-field">
+              <option value="爆速">爆速</option>
+              <option value="普通">普通</option>
+              <option value="不安定">不安定</option>
+              <option value="なし">なし</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-sm block mb-1">魔力供給(電源)</label>
+            <select id="power-status" class="input-field">
+              <option value="豊富">豊富</option>
+              <option value="一部あり">一部あり</option>
+              <option value="なし">なし</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="text-sm block mb-1">作業机の広さ</label>
+        <select id="desk-status" class="input-field">
+          <option value="広大">広大（地図を広げられる）</option>
+          <option value="普通">普通</option>
+          <option value="狭い">狭い</option>
+        </select>
+
+        <label class="text-sm block mb-1">トイレの聖域レベル</label>
+        <select id="toilet-status" class="input-field">
+          <option value="聖域級">聖域級（非常に綺麗）</option>
+          <option value="綺麗">綺麗</option>
+          <option value="普通">普通</option>
+          <option value="危険">危険</option>
+        </select>
+
+        <label class="text-sm block mb-1">備考・メモ</label>
+        <textarea
+          id="memo-status"
+          class="input-field h-20"
+          placeholder="混雑状況や店主の雰囲気など..."
+        ></textarea>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button class="cmd-btn flex-1" onclick="submitPost()">
+          報告を完了する
+        </button>
+        <button
+          class="cmd-btn bg-red-900 border-red-500"
+          onclick="closeModal()"
+        >
+          戻る
+        </button>
+      </div>
+    </div>
+
+    <div id="profile-modal" class="modal rpg-panel p-6">
+      <h2 class="text-xl mb-4 text-yellow-400">冒険者の書</h2>
+      <input
+        type="file"
+        id="avatar-upload"
+        accept="image/*"
+        onchange="handleAvatarUpload(event)"
+      />
+      <button
+        class="cmd-btn w-full mb-4"
+        onclick="document.getElementById('avatar-upload').click()"
+      >
+        姿を変える
+      </button>
+      <button class="cmd-btn w-full" onclick="closeModal()">閉じる</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+      let map, minimap;
+      let fogCanvas, fogCtx;
+      let showFog = true;
+      let playerMarker = null;
+      let miniPlayerMarker = null;
+      let currentAvatarUrl =
+        "https://api.dicebear.com/7.x/pixel-art/svg?seed=knight";
+      const exploredPoints = [];
+      const spotDataList = [];
+
+      function init() {
+        map = L.map("map", {
+          zoomControl: false,
+          attributionControl: false,
+        }).setView([35.6895, 139.6917], 15);
+        L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+        ).addTo(map);
+
+        minimap = L.map("minimap", {
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          touchZoom: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+        }).setView([35.6895, 139.6917], 19);
+        L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+        ).addTo(minimap);
+
+        fogCanvas = document.getElementById("fog-overlay");
+        fogCtx = fogCanvas.getContext("2d");
+        resizeCanvas();
+
+        map.on("move", () => {
+          updateFog();
+          syncMinimap();
+        });
+        map.on("click", (e) => {
+          exploreAt(e.latlng);
+        });
+
+        locateUser();
+      }
+
+      function createPlayerIcon() {
+        return L.divIcon({
+          className: "player-marker-container",
+          html: `
+                    <div class="player-base-glow"></div>
+                    <img class="player-sprite" src="${currentAvatarUrl}">
+                `,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+        });
+      }
+
+      function syncMinimap() {
+        if (playerMarker) {
+          const center = playerMarker.getLatLng();
+          minimap.setView(center, 19);
+          if (miniPlayerMarker) {
+            miniPlayerMarker.setLatLng(center);
+          } else {
+            miniPlayerMarker = L.marker(center, {
+              icon: createPlayerIcon(),
+            }).addTo(minimap);
+          }
+        }
+      }
+
+      function toggleStats() {
+        const panel = document.getElementById("stat-panel");
+        const icon = document.getElementById("toggle-icon");
+        panel.classList.toggle("minimized");
+        icon.innerText = panel.classList.contains("minimized") ? "+" : "-";
+      }
+
+      function handleAvatarUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          currentAvatarUrl = e.target.result;
+          document.getElementById("avatar-preview").src = currentAvatarUrl;
+          const newIcon = createPlayerIcon();
+          if (playerMarker) playerMarker.setIcon(newIcon);
+          if (miniPlayerMarker) miniPlayerMarker.setIcon(newIcon);
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function locateUser() {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition((position) => {
+          const latlng = L.latLng(
+            position.coords.latitude,
+            position.coords.longitude
+          );
+          map.setView(latlng, 17);
+          updatePlayerIcon(latlng);
+          syncMinimap();
+        });
+      }
+
+      function updatePlayerIcon(latlng) {
+        if (playerMarker) {
+          playerMarker.setLatLng(latlng);
+        } else {
+          playerMarker = L.marker(latlng, {
+            icon: createPlayerIcon(),
+            zIndexOffset: 1000,
+          }).addTo(map);
+        }
+        exploreAt(latlng);
+      }
+
+      function resizeCanvas() {
+        fogCanvas.width = window.innerWidth;
+        fogCanvas.height = window.innerHeight;
+        updateFog();
+      }
+
+      function exploreAt(latlng) {
+        exploredPoints.push(latlng);
+        updateFog();
+      }
+
+      function updateFog() {
+        if (!showFog || !fogCtx) {
+          if (fogCtx) fogCtx.clearRect(0, 0, fogCanvas.width, fogCanvas.height);
+          return;
+        }
+        fogCtx.globalCompositeOperation = "source-over";
+        fogCtx.fillStyle = "rgba(0, 5, 10, 0.9)";
+        fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
+        fogCtx.globalCompositeOperation = "destination-out";
+        exploredPoints.forEach((point) => {
+          try {
+            const pos = map.latLngToContainerPoint(point);
+            const zoomFactor = Math.pow(2, map.getZoom() - 15);
+            const radius = 140 * zoomFactor;
+            const gradient = fogCtx.createRadialGradient(
+              pos.x,
+              pos.y,
+              radius * 0.3,
+              pos.x,
+              pos.y,
+              radius
+            );
+            gradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+            gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+            fogCtx.fillStyle = gradient;
+            fogCtx.beginPath();
+            fogCtx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+            fogCtx.fill();
+          } catch (e) {}
+        });
+      }
+
+      function toggleFog() {
+        showFog = !showFog;
+        updateFog();
+      }
+      function openModal(id) {
+        if (id === "list-modal") renderSpotList();
+        document.getElementById(id).style.display = "block";
+      }
+      function closeModal() {
+        document
+          .querySelectorAll(".modal")
+          .forEach((m) => (m.style.display = "none"));
+      }
+
+      function renderSpotList() {
+        const container = document.getElementById("spot-list-container");
+        if (spotDataList.length === 0) {
+          container.innerHTML =
+            '<p class="text-gray-400 text-sm">周辺に報告はありません。</p>';
+          return;
+        }
+        container.innerHTML = spotDataList
+          .map(
+            (spot) => `
+                <div class="spot-list-item">
+                    <div class="text-yellow-400 text-lg">■ ${spot.name}</div>
+                    <div class="text-xs text-gray-300 grid grid-cols-2 gap-1 mt-1">
+                        <span>📡 Wi-Fi: ${spot.wifi}</span>
+                        <span>⚡ 電源: ${spot.power}</span>
+                        <span>🪑 机: ${spot.desk}</span>
+                        <span>🚽 トイレ: ${spot.toilet}</span>
+                    </div>
+                    ${
+                      spot.memo
+                        ? `<div class="text-[10px] text-gray-400 mt-1 italic">「${spot.memo}」</div>`
+                        : ""
+                    }
+                </div>
+            `
+          )
+          .reverse()
+          .join("");
+      }
+
+      function submitPost() {
+        const name = document.getElementById("spot-name").value;
+        if (!name) return;
+        const spotData = {
+          name: name,
+          wifi: document.getElementById("wifi-status").value,
+          power: document.getElementById("power-status").value,
+          desk: document.getElementById("desk-status").value,
+          toilet: document.getElementById("toilet-status").value,
+          memo: document.getElementById("memo-status").value,
+          latlng: map.getCenter(),
+        };
+        spotDataList.push(spotData);
+
+        document.getElementById("stat-spots").innerText = spotDataList.length;
+        document.getElementById("stat-int").innerText =
+          210 + spotDataList.length * 5;
+
+        const icon = L.divIcon({
+          className: "custom-marker",
+          html: '<i class="fa-solid fa-location-dot"></i>',
+          iconSize: [24, 24],
+        });
+
+        const popupContent = `<div style="color:#1a2238; font-family:'DotGothic16'; font-size:12px;">
+                <b style="color:#d97706;">${spotData.name}</b><br>
+                Wi-Fi: ${spotData.wifi} | 電源: ${spotData.power}
+            </div>`;
+
+        L.marker(spotData.latlng, { icon: icon })
+          .addTo(map)
+          .bindPopup(popupContent);
+        L.marker(spotData.latlng, { icon: icon }).addTo(minimap);
+
+        exploreAt(spotData.latlng);
+        closeModal();
+        document.getElementById("spot-name").value = "";
+        document.getElementById("memo-status").value = "";
+      }
+
+      window.addEventListener("resize", resizeCanvas);
+      window.onload = init;
+    </script>
+  </body>
+</html>
